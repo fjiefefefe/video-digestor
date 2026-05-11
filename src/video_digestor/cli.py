@@ -51,7 +51,7 @@ def _resolve_output_dir(title: str, output: Optional[Path]) -> Path:
 def inspect(
     url: str = typer.Argument(..., help="视频 URL"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认 ./output）"),
-    cookies_from_browser: Optional[str] = typer.Option(None, "--cookies-from-browser", help="从浏览器读取 cookie，如 chrome/firefox/edge"),
+    cookies_from_browser: str = typer.Option("firefox", "--cookies-from-browser", help="从浏览器读取 cookie (默认 firefox)"),
     cookies_file: Optional[Path] = typer.Option(None, "--cookies", help="cookies.txt 文件路径"),
     js_runtimes: Optional[str] = typer.Option("deno", "--js-runtimes", help="JS 运行时，如 deno/node (默认 deno)"),
 ):
@@ -89,7 +89,7 @@ def fetch(
     lang: str = typer.Option("zh,en", "--lang", "-l", help="字幕语言偏好（逗号分隔）"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认 ./output）"),
     audio_only: bool = typer.Option(False, "--audio-only", "-a", help="跳过字幕，直接抽取音频"),
-    cookies_from_browser: Optional[str] = typer.Option(None, "--cookies-from-browser", help="从浏览器读取 cookie，如 chrome/firefox/edge"),
+    cookies_from_browser: str = typer.Option("firefox", "--cookies-from-browser", help="从浏览器读取 cookie (默认 firefox)"),
     cookies_file: Optional[Path] = typer.Option(None, "--cookies", help="cookies.txt 文件路径"),
     js_runtimes: Optional[str] = typer.Option("deno", "--js-runtimes", help="JS 运行时，如 deno/node (默认 deno)"),
 ):
@@ -197,7 +197,7 @@ def run(
     beam_size: int = typer.Option(5, "--beam-size", "-b", help="搜索宽度 (1-20)"),
     provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     skip_summary: bool = typer.Option(False, "--skip-summary", help="跳过总结步骤"),
-    cookies_from_browser: Optional[str] = typer.Option(None, "--cookies-from-browser", help="从浏览器读取 cookie，如 chrome/firefox/edge"),
+    cookies_from_browser: str = typer.Option("firefox", "--cookies-from-browser", help="从浏览器读取 cookie (默认 firefox)"),
     cookies_file: Optional[Path] = typer.Option(None, "--cookies", help="cookies.txt 文件路径"),
     js_runtimes: Optional[str] = typer.Option("deno", "--js-runtimes", help="JS 运行时，如 deno/node (默认 deno)"),
 ):
