@@ -110,8 +110,8 @@ video-digestor summarize transcript.txt [--provider none|local|openai]
 | 提供者 | 说明 |
 |--------|------|
 | `none` | 不调用 AI，仅输出完整 transcript |
-| `local` (默认) | 结构化排版，不调用 API |
-| `openai` | 调用 AI 生成结构化笔记 |
+| `openai` (默认) | 调用 AI 生成结构化笔记（默认 DeepSeek） |
+| `local` | 结构化排版，不调用 API |
 
 **AI 总结使用 DeepSeek：**
 

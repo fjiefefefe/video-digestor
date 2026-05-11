@@ -25,7 +25,6 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 class BaseSummarizer(ABC):
     @abstractmethod
     def summarize(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
-        """Generate summary.md in out_dir. Returns the path."""
         ...
 
 
@@ -34,23 +33,12 @@ class BaseSummarizer(ABC):
 # ---------------------------------------------------------------------------
 
 class NoAISummarizer(BaseSummarizer):
-    """Output a clean transcript-only Markdown. No AI involved."""
-
     def summarize(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
         transcript = transcript_path.read_text(encoding="utf-8")
-
-        summary_md = out_dir / "summary.md"
-        content = f"""# {video_title}
-
-## 转写文本
-
-> 以下为视频转写全文（未经过 AI 总结）
-
-{transcript}
-"""
-        summary_md.write_text(content, encoding="utf-8")
-        log.info("Saved no-AI summary: %s", summary_md)
-        return summary_md
+        content = f"# {video_title}\n\n## 转写文本\n\n> 以下为视频转写全文（未经过 AI 总结）\n\n{transcript}\n"
+        (out_dir / "summary.md").write_text(content, encoding="utf-8")
+        log.info("Saved no-AI summary: %s", out_dir / "summary.md")
+        return out_dir / "summary.md"
 
 
 # ---------------------------------------------------------------------------
@@ -58,13 +46,6 @@ class NoAISummarizer(BaseSummarizer):
 # ---------------------------------------------------------------------------
 
 class LocalPromptSummarizer(BaseSummarizer):
-    """Use a local prompt template + chunking to produce a structured summary.
-
-    This works without any AI API — it structures the transcript into the
-    required Markdown sections by using the prompt as a formatting guide
-    and chunking the transcript by time segments.
-    """
-
     def __init__(self, prompt_path: Path | None = None):
         self.prompt_path = prompt_path or PROMPTS_DIR / "default_summary.md"
         if not self.prompt_path.exists():
@@ -73,7 +54,6 @@ class LocalPromptSummarizer(BaseSummarizer):
     def summarize(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
         transcript = transcript_path.read_text(encoding="utf-8")
         prompt_template = self.prompt_path.read_text(encoding="utf-8")
-
         chunks = split_text(transcript, max_chars=8000)
 
         summary_md = out_dir / "summary.md"
@@ -85,9 +65,7 @@ class LocalPromptSummarizer(BaseSummarizer):
                 if len(chunks) > 1:
                     f.write(f"### 第 {i} 部分\n\n")
                 f.write(f"{chunk}\n\n")
-
-            f.write("---\n\n")
-            f.write("## 总结提示\n\n")
+            f.write("---\n\n## 总结提示\n\n")
             f.write(f"{prompt_template.format(title=video_title, transcript='[见上方转写文本]')}\n")
 
         log.info("Saved local-prompt summary: %s", summary_md)
@@ -99,13 +77,6 @@ class LocalPromptSummarizer(BaseSummarizer):
 # ---------------------------------------------------------------------------
 
 class OpenAISummarizer(BaseSummarizer):
-    """Call an OpenAI-compatible chat completion API.
-
-    Defaults to DeepSeek (api.deepseek.com).
-    Set DEEPSEEK_API_KEY or OPENAI_API_KEY env var to authenticate.
-    Override via OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL env vars.
-    """
-
     def __init__(
         self,
         base_url: str | None = None,
@@ -115,45 +86,57 @@ class OpenAISummarizer(BaseSummarizer):
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("OPENAI_MODEL", "deepseek-chat")
+        self._client = None
 
-    def summarize(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
-        if not self.api_key:
-            raise RuntimeError(
-                "No API key found. Set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
-            )
+    def _get_client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        return self._client
 
-        from openai import OpenAI
-
-        transcript = transcript_path.read_text(encoding="utf-8")
-        prompt_path = PROMPTS_DIR / "default_summary.md"
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.format(title=video_title, transcript=transcript)
-
-        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
-        log.info("Calling %s model %s ...", self.base_url, self.model)
-
-        response = client.chat.completions.create(
+    def _chat(self, system: str, prompt: str, temperature: float, max_tokens: int) -> str:
+        """Single API call → response text."""
+        response = self._get_client().chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "你是一个专业的视频内容总结助手。请严格按照用户要求的 Markdown 格式输出。"},
+                {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
-            max_tokens=4096,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content
+
+    def _read_prompt(self, name: str, **kwargs) -> str:
+        path = PROMPTS_DIR / name
+        return path.read_text(encoding="utf-8").format(**kwargs)
+
+    def _ensure_key(self):
+        if not self.api_key:
+            raise RuntimeError("No API key found. Set DEEPSEEK_API_KEY or OPENAI_API_KEY.")
+
+    # ---- summarize ----
+
+    def summarize(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
+        self._ensure_key()
+        transcript = transcript_path.read_text(encoding="utf-8")
+        prompt = self._read_prompt("default_summary.md", title=video_title, transcript=transcript)
+
+        log.info("Calling %s model %s ...", self.base_url, self.model)
+        content = self._chat(
+            "你是一个专业的视频内容总结助手。请严格按照用户要求的 Markdown 格式输出。",
+            prompt, temperature=0.3, max_tokens=4096,
         )
 
-        content = response.choices[0].message.content
+        path = out_dir / "summary.md"
+        path.write_text(content, encoding="utf-8")
+        log.info("Saved AI summary: %s", path)
+        return path
 
-        summary_md = out_dir / "summary.md"
-        summary_md.write_text(content, encoding="utf-8")
-        log.info("Saved AI summary: %s", summary_md)
-        return summary_md
+    # ---- narrate (auto / narrate / book) ----
 
-    def narrate(self, transcript_path: Path, out_dir: Path, video_title: str, mode: str = "auto") -> Path | None:
-        """Generate article.md. mode: auto | narrate | book"""
-        if not self.api_key:
-            raise RuntimeError("No API key found.")
-
+    def narrate(self, transcript_path: Path, out_dir: Path, video_title: str, mode: str = "auto") -> Path:
+        self._ensure_key()
         transcript = transcript_path.read_text(encoding="utf-8")
 
         if mode == "auto":
@@ -163,85 +146,42 @@ class OpenAISummarizer(BaseSummarizer):
 
         if mode == "book":
             return self._narrate_book(transcript, out_dir, video_title)
-        else:
-            return self._narrate_rewrite(transcript, out_dir, video_title)
+        return self._narrate_rewrite(transcript, out_dir, video_title)
 
     def _classify_style(self, transcript: str) -> str:
-        """Classify transcript as 'oral' or 'written' in one token."""
-        from openai import OpenAI
-
-        sample = transcript[:1500]
-        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
-
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[{
-                "role": "user",
-                "content": (
-                    "分析以下文本，判断它是「口语」还是「书面稿」。\n"
-                    "口语：播客聊天、即兴发言、大量嗯啊停顿、碎片化句子\n"
-                    "书面稿：纪录片旁白、有稿演讲、精炼文雅的连贯文章\n"
-                    "只回答一个字：口语 或 书面稿\n\n"
-                    f"{sample}"
-                ),
-            }],
-            temperature=0,
-            max_tokens=8,
-        )
-
-        answer = response.choices[0].message.content.strip()
+        answer = self._chat(
+            "",
+            (
+                "分析以下文本，判断它是「口语」还是「书面稿」。\n"
+                "口语：播客聊天、即兴发言、大量嗯啊停顿、碎片化句子\n"
+                "书面稿：纪录片旁白、有稿演讲、精炼文雅的连贯文章\n"
+                "只回答一个字：口语 或 书面稿\n\n"
+                f"{transcript[:1500]}"
+            ),
+            temperature=0, max_tokens=8,
+        ).strip()
         return "written" if "书面" in answer else "oral"
 
     def _narrate_rewrite(self, transcript: str, out_dir: Path, video_title: str) -> Path:
-        """Original narrate: rewrite transcript as flowing article."""
-        from openai import OpenAI
-
-        prompt_path = PROMPTS_DIR / "default_article.md"
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.format(title=video_title, transcript=transcript)
-
-        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        prompt = self._read_prompt("default_article.md", title=video_title, transcript=transcript)
         log.info("生成文章中 via %s ...", self.base_url)
-
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": "你是一个专业的视频内容转述助手，擅长把口语讲稿转写成流畅的阅读体文章。"},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.4,
-            max_tokens=8192,
+        content = self._chat(
+            "你是一个专业的视频内容转述助手，擅长把口语讲稿转写成流畅的阅读体文章。",
+            prompt, temperature=0.4, max_tokens=8192,
         )
-
-        content = response.choices[0].message.content
-        article_md = out_dir / "article.md"
-        article_md.write_text(content, encoding="utf-8")
-        log.info("Saved article: %s", article_md)
-        return article_md
+        path = out_dir / "article.md"
+        path.write_text(content, encoding="utf-8")
+        log.info("Saved article: %s", path)
+        return path
 
     def _narrate_book(self, transcript: str, out_dir: Path, video_title: str) -> Path:
-        """Book-edit: preserve original text, only format & polish."""
-        from openai import OpenAI
-
-        prompt_path = PROMPTS_DIR / "book_format.md"
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.format(transcript=transcript)
-
-        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        prompt = self._read_prompt("book_format.md", transcript=transcript)
         log.info("排版书中 via %s ...", self.base_url)
-
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": "你是一个资深出版编辑，擅长将口语转写稿整理为流畅的书籍文稿，保留原文风格。"},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=8192,
+        content = self._chat(
+            "你是一个资深出版编辑，擅长将口语转写稿整理为流畅的书籍文稿，保留原文风格。",
+            prompt, temperature=0.3, max_tokens=8192,
         )
-
-        content = response.choices[0].message.content
-        article_md = out_dir / "article.md"
-        article_md.write_text(content, encoding="utf-8")
-        log.info("Saved book article: %s", article_md)
-        return article_md
+        path = out_dir / "article.md"
+        path.write_text(content, encoding="utf-8")
+        log.info("Saved book article: %s", path)
+        return path
