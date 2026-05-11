@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+*.dist-info/
+output/
+.venv/
+.env
+*.mp3
+*.srt
+*.txt
+!prompts/*.txt
+dist/
