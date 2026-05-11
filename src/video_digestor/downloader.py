@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _build_base_cmd(
+    url: str,
     cookies_from_browser: str | None = None,
     cookies_file: Path | None = None,
     js_runtimes: str | None = None,
@@ -24,7 +25,8 @@ def _build_base_cmd(
         cmd += ["--cookies", str(cookies_file)]
     if js_runtimes:
         cmd += ["--js-runtimes", js_runtimes]
-        cmd += ["--remote-components", "ejs:github"]
+        if "youtube.com" in url or "youtu.be" in url:
+            cmd += ["--remote-components", "ejs:github"]
     return cmd
 
 
@@ -40,7 +42,7 @@ def get_video_info(
 ) -> dict:
     """Fetch video metadata using yt-dlp (no download)."""
     ensure_ytdlp()
-    cmd = _build_base_cmd(cookies_from_browser, cookies_file, js_runtimes)
+    cmd = _build_base_cmd(url, cookies_from_browser, cookies_file, js_runtimes)
     cmd += [
         "--dump-json",
         "--no-download",
@@ -115,7 +117,7 @@ def download_subtitles(
 
             log.info("尝试 %s 字幕（%s: %s）...", sub_type, attempt_label, lang_str)
             try:
-                cmd = _build_base_cmd(cookies_from_browser, cookies_file, js_runtimes)
+                cmd = _build_base_cmd(url, cookies_from_browser, cookies_file, js_runtimes)
                 cmd += [
                     "--skip-download",
                     flag,
@@ -225,7 +227,7 @@ def download_audio(
     ensure_ffmpeg()
 
     log.info("Downloading audio from %s ...", url)
-    cmd = _build_base_cmd(cookies_from_browser, cookies_file, js_runtimes)
+    cmd = _build_base_cmd(url, cookies_from_browser, cookies_file, js_runtimes)
     cmd += [
         "--extract-audio",
         "--audio-format", "mp3",
