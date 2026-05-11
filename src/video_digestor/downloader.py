@@ -142,14 +142,20 @@ def download_subtitles(
                 return target
 
     log.info("未找到任何字幕")
+    if "bilibili.com" in url and not cookies_from_browser and not cookies_file:
+        log.info("💡 B站视频可能需要登录才能拿到AI字幕，试试:")
+        log.info("   video-digestor run URL --cookies-from-browser chrome")
     return None
 
 
 def _expand_langs(langs: list[str]) -> list[str]:
-    """将短语言代码展开为常见变体，提高匹配概率。"""
+    """将短语言代码展开为常见变体，提高匹配概率。
+
+    包含 B 站专用 AI 字幕代码 (ai-zh, ai-en) 和弹幕。
+    """
     variants = {
-        "zh": ["zh", "zh-Hans", "zh-CN", "zh-Hant", "zh-TW", "zh-HK"],
-        "en": ["en", "en-US", "en-GB", "en-orig"],
+        "zh": ["zh", "zh-Hans", "zh-CN", "zh-Hant", "zh-TW", "zh-HK", "ai-zh"],
+        "en": ["en", "en-US", "en-GB", "en-orig", "ai-en"],
         "ja": ["ja", "ja-JP"],
         "ko": ["ko", "ko-KR"],
     }
