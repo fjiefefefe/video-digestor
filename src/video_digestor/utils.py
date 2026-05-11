@@ -106,12 +106,17 @@ def sanitize_dirname(name: str) -> str:
     return name[:120]
 
 
+# 项目根目录，output 固定放在这里
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_OUTPUT = _PROJECT_ROOT / "output"
+
+
 def setup_output_dir(title: str, base_dir: Path | None = None) -> Path:
     """Create and return the output directory for a video.
 
     Directory layout: {base_dir}/{sanitized_title}/
     """
-    base = base_dir or Path("./output")
+    base = base_dir or _DEFAULT_OUTPUT
     dirname = sanitize_dirname(title) or "video"
     out = base / dirname
     out.mkdir(parents=True, exist_ok=True)
