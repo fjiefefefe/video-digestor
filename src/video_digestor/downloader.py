@@ -89,46 +89,98 @@ def download_subtitles(
 ) -> Path | None:
     """Download subtitles using yt-dlp. Returns path to .srt file or None.
 
-    Tries manual subtitles first, falls back to automatic captions.
+    策略：
+    1. 先按用户指定的语言下载
+    2. 若无匹配，尝试补全语言变体（zh → zh-Hans, zh-CN 等）
+    3. 仍无则不加语言限制，全部下载
+    按 人工字幕 → 自动字幕 顺序尝试。
     """
     ensure_ytdlp()
-    lang_str = ",".join(langs)
+    expanded_langs = _expand_langs(langs)
+
+    lang_attempts: list[tuple[str, str | None]] = [
+        ("指定语言", ",".join(langs)),
+    ]
+    if expanded_langs != langs:
+        lang_attempts.append(("扩展语言", ",".join(expanded_langs)))
+    lang_attempts.append(("全部语言", None))
 
     for sub_type, flag in [
         ("manual", "--write-subs"),
         ("auto", "--write-auto-subs"),
     ]:
-        log.info("Trying %s subtitles (langs: %s)...", sub_type, lang_str)
-        try:
-            cmd = _build_base_cmd(cookies_from_browser, cookies_file, js_runtimes)
-            cmd += [
-                "--skip-download",
-                flag,
-                "--sub-lang", lang_str,
-                "--no-playlist",
-                "--output", f"{out_dir}/%(title)s.%(ext)s",
-                url,
-            ]
-            run_cmd(cmd)
-        except RuntimeError as e:
-            log.warning("%s subtitles failed: %s", sub_type, e)
-            continue
+        for attempt_label, lang_str in lang_attempts:
+            if not lang_str:
+                continue
 
-        sub_files = sorted(out_dir.glob("*.vtt")) + sorted(out_dir.glob("*.srt"))
-        if sub_files:
-            sub_file = sub_files[0]
-            log.info("Downloaded subtitle: %s", sub_file)
+            log.info("尝试 %s 字幕（%s: %s）...", sub_type, attempt_label, lang_str)
+            try:
+                cmd = _build_base_cmd(cookies_from_browser, cookies_file, js_runtimes)
+                cmd += [
+                    "--skip-download",
+                    flag,
+                ]
+                if lang_str is not None:
+                    cmd += ["--sub-lang", lang_str]
+                cmd += [
+                    "--no-playlist",
+                    "--output", f"{out_dir}/%(title)s.%(ext)s",
+                    url,
+                ]
+                run_cmd(cmd)
+            except RuntimeError as e:
+                log.warning("  失败: %s", str(e).split("\n")[0])
+                continue
 
-            target = out_dir / "raw_subtitle.srt"
-            if sub_file.suffix == ".vtt":
-                _vtt_to_srt(sub_file, target)
-                sub_file.unlink()
-            elif sub_file != target:
-                sub_file.rename(target)
-            log.info("Saved as: %s", target)
-            return target
+            sub_files = _find_subtitle_files(out_dir)
+            if sub_files:
+                sub_file = sub_files[0]
+                log.info("  获取到: %s", sub_file.name)
+                target = out_dir / "raw_subtitle.srt"
+                _convert_to_srt(sub_file, target)
+                log.info("  保存为: %s", target.name)
+                return target
 
+    log.info("未找到任何字幕")
     return None
+
+
+def _expand_langs(langs: list[str]) -> list[str]:
+    """将短语言代码展开为常见变体，提高匹配概率。"""
+    variants = {
+        "zh": ["zh", "zh-Hans", "zh-CN", "zh-Hant", "zh-TW", "zh-HK"],
+        "en": ["en", "en-US", "en-GB", "en-orig"],
+        "ja": ["ja", "ja-JP"],
+        "ko": ["ko", "ko-KR"],
+    }
+    result = []
+    seen = set()
+    for lang in langs:
+        for v in variants.get(lang, [lang]):
+            if v not in seen:
+                result.append(v)
+                seen.add(v)
+    return result
+
+
+def _find_subtitle_files(out_dir: Path) -> list[Path]:
+    """Return sorted list of downloaded subtitle files (any format)."""
+    return sorted(
+        f for f in out_dir.glob("*")
+        if f.suffix.lower() in (".srt", ".vtt", ".ass", ".ssa")
+    )
+
+
+def _convert_to_srt(src: Path, target: Path) -> None:
+    """Convert any subtitle format to .srt, or just rename if already .srt."""
+    if src.suffix.lower() == ".srt":
+        if src != target:
+            src.rename(target)
+    elif src.suffix.lower() == ".vtt":
+        _vtt_to_srt(src, target)
+        src.unlink()
+    else:
+        src.rename(target)
 
 
 def _vtt_to_srt(vtt_path: Path, srt_path: Path) -> None:
