@@ -1,6 +1,6 @@
 # video-digestor
 
-把视频链接/文件转成可读 Markdown 笔记。支持 YouTube、Bilibili 等主流平台。
+把视频链接/文件转成可读 Markdown 笔记。支持 YouTube、Bilibili、抖音等主流平台。
 
 ## 工作流程
 
@@ -48,6 +48,9 @@ video-digestor summarize transcript.txt --provider local
 
 # 一键全流程
 video-digestor run "https://www.bilibili.com/video/BVxxxxxx" -m medium -l zh
+
+# 抖音需要浏览器登录 douyin.com 后使用
+video-digestor run "https://www.douyin.com/video/xxxxx" --cookies-from-browser chrome -m medium -l zh
 ```
 
 ## 命令参考
@@ -117,6 +120,25 @@ export DEEPSEEK_API_KEY="sk-xxxxx"
 video-digestor summarize transcript.txt --provider openai --title "视频标题"
 ```
 
+**同时生成阅读体文章（自动判断风格）：**
+
+```bash
+# 自动判断：口语视频 → AI 转述，书稿级视频 → 排版保留原文
+video-digestor summarize transcript.txt --with-article -t "标题"
+
+# 强制排版模式（保留原文，出版书风格）
+video-digestor summarize transcript.txt --book -t "标题"
+
+# 强制转述模式
+video-digestor summarize transcript.txt --narrate -t "标题"
+```
+
+| 文章模式 | 说明 |
+|----------|------|
+| `auto`（默认） | AI 自动判断文字是口语还是书面稿，口语转述，书稿排版 |
+| `--book` | 保留原文措辞，仅做编辑排版（去口语词、分章节、加标点） |
+| `--narrate` | AI 转述改写为流畅的阅读体文章 |
+
 **自定义 AI 端点：**
 
 ```bash
@@ -131,7 +153,7 @@ export OPENAI_MODEL="your-model"
 video-digestor run "URL" [OPTIONS]
 ```
 
-包含 `inspect` → `fetch` → `transcribe`（如需）→ `summarize` 全部步骤。
+包含 `inspect` → `fetch` → `transcribe`（如需）→ `summarize` 全部步骤。默认自动生成 `article.md`，AI 自动判断口语/书面稿风格。可用 `--book` / `--narrate` 强制指定风格，`--skip-summary` 跳过 AI 总结。
 
 ### `cleanup` — 清理文件
 
@@ -141,7 +163,7 @@ video-digestor cleanup --all             # 清理所有输出目录
 video-digestor cleanup -k                # 只删音频，保留文本
 ```
 
-## YouTube/B站 访问
+## YouTube/B站/抖音 访问
 
 ### YouTube Cookie 认证
 
@@ -157,6 +179,20 @@ video-digestor run "URL" --cookies-from-browser chrome
 # 或导出 cookies.txt
 video-digestor run "URL" --cookies ./cookies.txt
 ```
+
+### 抖音访问
+
+抖音需要浏览器登录 douyin.com 后才能解析。无需 ffmpeg 以外额外依赖，内置 ABogus 签名直连抖音 API。
+
+```bash
+# Chrome 需先登录 douyin.com，然后：
+video-digestor run "https://www.douyin.com/video/xxxxx" --cookies-from-browser chrome -m medium -l zh
+
+# 也支持精选页链接
+video-digestor run "https://www.douyin.com/jingxuan?modal_id=xxxxx" --cookies-from-browser chrome
+```
+
+> 抖音视频没有字幕，会自动下载音频 → faster-whisper 转写 → AI 总结。
 
 ### JS 运行时
 
@@ -181,10 +217,13 @@ output/
     ├── metadata.json       # 视频元信息
     ├── raw_subtitle.srt    # 字幕（SRT 格式）
     ├── transcript.txt      # 转写文本（带时间戳）
-    └── summary.md          # Markdown 笔记
+    ├── summary.md          # 7 段式结构化笔记
+    └── article.md          # 阅读体文章（自动判断风格）
 ```
 
-`summary.md` 包含 7 个标准化段落：一句话结论、核心内容、可执行步骤、命令/代码、坑点、时间戳索引。
+`article.md` 根据文字类型自动调整：
+- **口语视频**（播客/聊天）→ AI 转述改写，第三人称流畅叙事
+- **书稿级视频**（纪录片/旁白）→ 保留原文，仅做编辑排版和分章节
 
 ## 常见问题
 
@@ -212,7 +251,7 @@ video-digestor run "URL" --cookies-from-browser firefox
 
 | 类型 | 包 | 说明 |
 |------|-----|------|
-| Python | typer, rich, yt-dlp, openai, srt | 核心依赖 |
+| Python | typer, rich, yt-dlp, openai, srt, gmssl | 核心依赖 |
 | Python (可选) | faster-whisper | 本地语音转写 |
 | 系统 | ffmpeg | 音频提取 |
 | 系统 (可选) | deno | YouTube JS challenge 解算 |

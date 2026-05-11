@@ -40,7 +40,12 @@ def get_video_info(
     cookies_file: Path | None = None,
     js_runtimes: str | None = None,
 ) -> dict:
-    """Fetch video metadata using yt-dlp (no download)."""
+    """Fetch video metadata using yt-dlp (no download). Uses Douyin API for douyin.com URLs."""
+    if "douyin.com" in url:
+        from video_digestor.douyin import get_douyin_info
+        browser = cookies_from_browser or "chrome"
+        return get_douyin_info(url, cookies_from_browser=browser)
+
     ensure_ytdlp()
     cmd = _build_base_cmd(url, cookies_from_browser, cookies_file, js_runtimes)
     cmd += [
@@ -97,6 +102,9 @@ def download_subtitles(
     3. 仍无则不加语言限制，全部下载
     按 人工字幕 → 自动字幕 顺序尝试。
     """
+    if "douyin.com" in url:
+        return None
+
     ensure_ytdlp()
     expanded_langs = _expand_langs(langs)
 
@@ -223,6 +231,11 @@ def download_audio(
     js_runtimes: str | None = None,
 ) -> Path | None:
     """Download audio-only from a video URL. Returns path to audio file."""
+    if "douyin.com" in url:
+        from video_digestor.douyin import download_douyin_audio
+        browser = cookies_from_browser or "chrome"
+        return download_douyin_audio(url, out_dir, cookies_from_browser=browser)
+
     ensure_ytdlp()
     ensure_ffmpeg()
 

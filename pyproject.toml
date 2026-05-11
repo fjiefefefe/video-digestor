@@ -13,6 +13,7 @@ dependencies = [
     "yt-dlp>=2024.0",
     "openai>=1.0",
     "srt>=3.5",
+    "gmssl>=3.2",
 ]
 
 [project.optional-dependencies]

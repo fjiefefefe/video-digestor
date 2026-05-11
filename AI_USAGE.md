@@ -7,8 +7,8 @@
 一个本地 CLI 工具，输入视频 URL → 输出结构化 Markdown 笔记。流程：
 
 ```
-inspect → 有字幕？→ 直接下载 → summarize → summary.md
-                   → 无字幕？→ 下载音频 → transcribe → summarize → summary.md
+inspect → 有字幕？→ 直接下载 → summarize → summary.md + article.md(自动)
+                   → 无字幕？→ 下载音频 → transcribe → summarize → summary.md + article.md(自动)
 ```
 
 ## 安装（帮用户装）
@@ -72,13 +72,29 @@ video-digestor summarize transcript.txt -t "视频标题"
 # --provider openai  默认，用 DeepSeek AI 总结
 # --provider local   不用 AI，只排版
 # --provider none    纯原文
+
+# 同时生成阅读体文章（自动判断风格）
+video-digestor summarize transcript.txt --with-article -t "标题"
+# --book    强制保留原文、出版书风格排版
+# --narrate 强制 AI 转述改写
 ```
+
+**文章模式说明：**
+
+| 模式 | 说明 |
+|------|------|
+| `auto` (默认) | AI 先判断文字是口语还是书面稿。口语 → 转述改写，书面稿 → 保留原文排版 |
+| `--book` | 保留原文措辞和叙事顺序，去口语词、分章节、加标点。适合纪录片/旁白 |
+| `--narrate` | AI 转述为"视频中提到...作者认为..."的第三人称流畅文章。适合播客/聊天 |
 
 ### `run` — 一键全流程（最常用）
 
 ```bash
 video-digestor run "URL" -m medium -l zh
 # 自动判断：有字幕跳过转写，无字幕走全流程
+# 默认自动生成 article.md（AI 判断口语/书稿风格）
+# --book    强制书稿排版风格
+# --narrate 强制转述改写风格
 # --skip-summary  只拿字幕/转写，不总结
 ```
 
@@ -112,6 +128,19 @@ video-digestor run "https://www.bilibili.com/video/BVxxxxxx" -m medium -l zh
 # 然后重试，会自动走转写流程
 ```
 
+### 场景 2.5：用户发来抖音链接
+
+```bash
+# 抖音需要 Chrome 登录 douyin.com 后才可用
+video-digestor run "https://www.douyin.com/video/xxxxx" --cookies-from-browser chrome -m medium -l zh
+
+# 也支持精选页链接
+video-digestor run "https://www.douyin.com/jingxuan?modal_id=xxxxx" --cookies-from-browser chrome
+
+# 抖音没有字幕，自动走：API 取描述 → 下载音频 → faster-whisper 转写 → AI 总结
+# 抖音内置 ABogus 签名，不依赖 yt-dlp
+```
+
 ### 场景 3：用户想只看不总结
 
 ```bash
@@ -128,11 +157,29 @@ video-digestor transcribe ~/Downloads/lecture.mp3 -m medium -l zh
 video-digestor summarize ./output/lecture/transcript.txt -t "讲座标题"
 ```
 
-### 场景 5：不用 AI，只要排版
+### 场景 5：不要 AI 总结，只要排版
 
 ```bash
 video-digestor run "URL" --provider local
 # 不调用 API，生成结构化 Markdown 但不提炼内容
+```
+
+### 场景 6：高质量纪录片文案，要保留原文出书稿
+
+```bash
+video-digestor run "URL" --book
+# 或自动判断：
+video-digestor run "URL"
+# AI 会自动识别旁白风格 → 走书稿排版模式，保留原文措辞
+```
+
+### 场景 7：播客聊天视频，要流畅阅读体
+
+```bash
+video-digestor run "URL" --narrate
+# 或自动判断：
+video-digestor run "URL"  
+# AI 自动识别口语风格 → 走转述改写模式
 ```
 
 ## 输出结构
@@ -142,18 +189,24 @@ output/{视频标题}/
 ├── metadata.json       # 视频信息
 ├── raw_subtitle.srt    # 字幕 SRT 格式
 ├── transcript.txt      # 带时间戳全文（如果有字幕，就是 SRT 原文）
-└── summary.md          # AI 生成的 7 段式笔记
+├── summary.md          # AI 生成的 7 段式笔记
+└── article.md          # 阅读体文章（自动判断风格）
 ```
+
+`article.md` 根据文字类型自动选择：
+- **口语** → AI 转述改写体（"视频中提到...作者认为..."）
+- **书面稿** → 出版编辑体（保留原文、分章节、去口语）
 
 ## 判断决策树
 
 作为 AI，收到用户视频链接后应该：
 
-1. 看 URL 域名判断平台（YouTube 需 deno，B站需 cookie）
+1. 看 URL 域名判断平台（YouTube 需 deno，B站需 cookie，抖音需 Chrome cookie）
 2. `inspect` 看有没有字幕 → 有字幕几秒搞定，没字幕告诉用户要等转写
 3. 推荐参数：中文视频 `-l zh -m medium`，英文 `-l en -m small`
 4. 用户没 GPU 时加 `-d cpu`
 5. DeepSeek key 没配时先帮配：`export DEEPSEEK_API_KEY="sk-xxxx"`
+6. 抖音 URL 先检查 `--cookies-from-browser chrome`，用户没登录 douyin.com 时提示登录
 
 ## 错误处理速查
 
@@ -165,3 +218,5 @@ output/{视频标题}/
 | B站字幕 未找到任何字幕 | 没登录 B站 | 用户浏览器登录 bilibili.com 后重试 |
 | 转写很慢 | 在用 CPU | 加 `-d cuda`（需要 NVIDIA GPU + CUDA Toolkit） |
 | faster-whisper not installed | 没装可选依赖 | `pip install faster-whisper` |
+| 抖音 API 返回空 | 没登录 douyin.com 或 cookie 过期 | 浏览器登录 douyin.com 后重试 |
+| gmssl 报错 | 没装 gmssl | `pip install gmssl` |

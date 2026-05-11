@@ -161,7 +161,9 @@ def summarize(
     provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     prompt: Optional[Path] = typer.Option(None, "--prompt", help="自定义 prompt 文件（provider=local 时使用）"),
     title: str = typer.Option("视频笔记", "--title", "-t", help="视频标题"),
-    with_article: bool = typer.Option(False, "--with-article", help="同时生成阅读体文章 article.md"),
+    with_article: bool = typer.Option(False, "--with-article", help="同时生成阅读体文章 article.md（自动判断风格）"),
+    book: bool = typer.Option(False, "--book", help="文章模式：保留原文，仅做排版编辑（出版书风格）"),
+    narrate: bool = typer.Option(False, "--narrate", help="文章模式：AI 转述改写"),
 ):
     """将 transcript 总结为 Markdown 笔记。"""
     if not transcript.exists():
@@ -179,8 +181,19 @@ def summarize(
         raise typer.BadParameter(f"未知 provider: {provider}")
 
     s.summarize(transcript, out_dir, title)
-    if provider == "openai" and with_article:
-        s.narrate(transcript, out_dir, title)
+
+    if with_article or book or narrate:
+        if provider != "openai":
+            log.warning("Article generation requires --provider openai")
+        else:
+            if book:
+                mode = "book"
+            elif narrate:
+                mode = "narrate"
+            else:
+                mode = "auto"
+            s.narrate(transcript, out_dir, title, mode=mode)
+
     log.info("Summary saved: %s", out_dir / "summary.md")
 
 
@@ -193,6 +206,7 @@ def narrate(
     transcript: Path = typer.Argument(..., help="transcript.txt 路径"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认 transcript 所在目录）"),
     title: str = typer.Option("视频笔记", "--title", "-t", help="视频标题"),
+    book: bool = typer.Option(False, "--book", help="保留原文，仅做排版编辑（出版书风格）"),
 ):
     """将 transcript 转为流畅的阅读体文章 (article.md)。"""
     from video_digestor.summarizer import OpenAISummarizer
@@ -202,7 +216,8 @@ def narrate(
 
     out_dir = output or transcript.parent
     s = OpenAISummarizer()
-    s.narrate(transcript, out_dir, title)
+    mode = "book" if book else "auto"
+    s.narrate(transcript, out_dir, title, mode=mode)
     log.info("Article saved: %s", out_dir / "article.md")
 
     result = s.summarize(transcript, out_dir, title)
@@ -225,6 +240,8 @@ def run(
     beam_size: int = typer.Option(5, "--beam-size", "-b", help="搜索宽度 (1-20)"),
     provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     skip_summary: bool = typer.Option(False, "--skip-summary", help="跳过总结步骤"),
+    book: bool = typer.Option(False, "--book", help="文章模式：保留原文，仅做排版编辑（出版书风格）"),
+    narrate: bool = typer.Option(False, "--narrate", help="文章模式：AI 转述改写"),
     cookies_from_browser: str = typer.Option("firefox", "--cookies-from-browser", help="从浏览器读取 cookie (默认 firefox)"),
     cookies_file: Optional[Path] = typer.Option(None, "--cookies", help="cookies.txt 文件路径"),
     js_runtimes: Optional[str] = typer.Option("deno", "--js-runtimes", help="JS 运行时，如 deno/node (默认 deno)"),
@@ -248,6 +265,18 @@ def run(
         transcript_path.write_text(text, encoding="utf-8")
         log.info("Subtitle saved as transcript.")
     else:
+        if "douyin.com" in url:
+            from video_digestor.douyin import get_douyin_description
+            browser = cookies_from_browser or "chrome"
+            try:
+                desc = get_douyin_description(url, cookies_from_browser=browser)
+                if desc:
+                    transcript_path = out_dir / "transcript.txt"
+                    transcript_path.write_text(desc, encoding="utf-8")
+                    log.info("Douyin description saved as transcript (%d chars).", len(desc))
+            except Exception as e:
+                log.warning("Could not fetch Douyin description: %s", e)
+
         log.info("No subtitles. Extracting audio...")
         audio_path = download_audio(url, out_dir, cookies_from_browser=cookies_from_browser, cookies_file=cookies_file, js_runtimes=js_runtimes)
         if not audio_path:
@@ -289,7 +318,13 @@ def run(
 
     s.summarize(transcript_path, out_dir, info["title"])
     if provider == "openai":
-        s.narrate(transcript_path, out_dir, info["title"])
+        if book:
+            mode = "book"
+        elif narrate:
+            mode = "narrate"
+        else:
+            mode = "auto"
+        s.narrate(transcript_path, out_dir, info["title"], mode=mode)
     console.print(f"\n[green]Done![/green] Output: {out_dir}")
 
 

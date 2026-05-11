@@ -149,14 +149,53 @@ class OpenAISummarizer(BaseSummarizer):
         log.info("Saved AI summary: %s", summary_md)
         return summary_md
 
-    def narrate(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
-        """Generate a flowing prose article from the transcript."""
+    def narrate(self, transcript_path: Path, out_dir: Path, video_title: str, mode: str = "auto") -> Path | None:
+        """Generate article.md. mode: auto | narrate | book"""
         if not self.api_key:
             raise RuntimeError("No API key found.")
 
+        transcript = transcript_path.read_text(encoding="utf-8")
+
+        if mode == "auto":
+            style = self._classify_style(transcript)
+            log.info("Auto-detected style: %s", style)
+            mode = "book" if style == "written" else "narrate"
+
+        if mode == "book":
+            return self._narrate_book(transcript, out_dir, video_title)
+        else:
+            return self._narrate_rewrite(transcript, out_dir, video_title)
+
+    def _classify_style(self, transcript: str) -> str:
+        """Classify transcript as 'oral' or 'written' in one token."""
         from openai import OpenAI
 
-        transcript = transcript_path.read_text(encoding="utf-8")
+        sample = transcript[:1500]
+        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "分析以下文本，判断它是「口语」还是「书面稿」。\n"
+                    "口语：播客聊天、即兴发言、大量嗯啊停顿、碎片化句子\n"
+                    "书面稿：纪录片旁白、有稿演讲、精炼文雅的连贯文章\n"
+                    "只回答一个字：口语 或 书面稿\n\n"
+                    f"{sample}"
+                ),
+            }],
+            temperature=0,
+            max_tokens=8,
+        )
+
+        answer = response.choices[0].message.content.strip()
+        return "written" if "书面" in answer else "oral"
+
+    def _narrate_rewrite(self, transcript: str, out_dir: Path, video_title: str) -> Path:
+        """Original narrate: rewrite transcript as flowing article."""
+        from openai import OpenAI
+
         prompt_path = PROMPTS_DIR / "default_article.md"
         prompt_template = prompt_path.read_text(encoding="utf-8")
         prompt = prompt_template.format(title=video_title, transcript=transcript)
@@ -175,8 +214,34 @@ class OpenAISummarizer(BaseSummarizer):
         )
 
         content = response.choices[0].message.content
-
         article_md = out_dir / "article.md"
         article_md.write_text(content, encoding="utf-8")
         log.info("Saved article: %s", article_md)
+        return article_md
+
+    def _narrate_book(self, transcript: str, out_dir: Path, video_title: str) -> Path:
+        """Book-edit: preserve original text, only format & polish."""
+        from openai import OpenAI
+
+        prompt_path = PROMPTS_DIR / "book_format.md"
+        prompt_template = prompt_path.read_text(encoding="utf-8")
+        prompt = prompt_template.format(transcript=transcript)
+
+        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        log.info("排版书中 via %s ...", self.base_url)
+
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "你是一个资深出版编辑，擅长将口语转写稿整理为流畅的书籍文稿，保留原文风格。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=8192,
+        )
+
+        content = response.choices[0].message.content
+        article_md = out_dir / "article.md"
+        article_md.write_text(content, encoding="utf-8")
+        log.info("Saved book article: %s", article_md)
         return article_md
