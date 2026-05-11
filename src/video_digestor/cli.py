@@ -161,10 +161,11 @@ def summarize(
     provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     prompt: Optional[Path] = typer.Option(None, "--prompt", help="自定义 prompt 文件（provider=local 时使用）"),
     title: str = typer.Option("视频笔记", "--title", "-t", help="视频标题"),
+    with_article: bool = typer.Option(False, "--with-article", help="同时生成阅读体文章 article.md"),
 ):
     """将 transcript 总结为 Markdown 笔记。"""
     if not transcript.exists():
-        raise typer.BadParameter(f"File not found: {transcript}")
+        raise typer.BadParameter(f"文件不存在: {transcript}")
 
     out_dir = output or transcript.parent
 
@@ -175,7 +176,34 @@ def summarize(
     elif provider == "openai":
         s = OpenAISummarizer()
     else:
-        raise typer.BadParameter(f"Unknown provider: {provider}. Use: none / local / openai")
+        raise typer.BadParameter(f"未知 provider: {provider}")
+
+    s.summarize(transcript, out_dir, title)
+    if provider == "openai" and with_article:
+        s.narrate(transcript, out_dir, title)
+    log.info("Summary saved: %s", out_dir / "summary.md")
+
+
+# ---------------------------------------------------------------------------
+# narrate — 生成阅读体文章
+# ---------------------------------------------------------------------------
+
+@app.command()
+def narrate(
+    transcript: Path = typer.Argument(..., help="transcript.txt 路径"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认 transcript 所在目录）"),
+    title: str = typer.Option("视频笔记", "--title", "-t", help="视频标题"),
+):
+    """将 transcript 转为流畅的阅读体文章 (article.md)。"""
+    from video_digestor.summarizer import OpenAISummarizer
+
+    if not transcript.exists():
+        raise typer.BadParameter(f"文件不存在: {transcript}")
+
+    out_dir = output or transcript.parent
+    s = OpenAISummarizer()
+    s.narrate(transcript, out_dir, title)
+    log.info("Article saved: %s", out_dir / "article.md")
 
     result = s.summarize(transcript, out_dir, title)
     log.info("Summary saved: %s", result)
@@ -260,6 +288,8 @@ def run(
         raise typer.BadParameter(f"Unknown provider: {provider}")
 
     s.summarize(transcript_path, out_dir, info["title"])
+    if provider == "openai":
+        s.narrate(transcript_path, out_dir, info["title"])
     console.print(f"\n[green]Done![/green] Output: {out_dir}")
 
 

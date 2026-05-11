@@ -148,3 +148,35 @@ class OpenAISummarizer(BaseSummarizer):
         summary_md.write_text(content, encoding="utf-8")
         log.info("Saved AI summary: %s", summary_md)
         return summary_md
+
+    def narrate(self, transcript_path: Path, out_dir: Path, video_title: str) -> Path:
+        """Generate a flowing prose article from the transcript."""
+        if not self.api_key:
+            raise RuntimeError("No API key found.")
+
+        from openai import OpenAI
+
+        transcript = transcript_path.read_text(encoding="utf-8")
+        prompt_path = PROMPTS_DIR / "default_article.md"
+        prompt_template = prompt_path.read_text(encoding="utf-8")
+        prompt = prompt_template.format(title=video_title, transcript=transcript)
+
+        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        log.info("生成文章中 via %s ...", self.base_url)
+
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "你是一个专业的视频内容转述助手，擅长把口语讲稿转写成流畅的阅读体文章。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=8192,
+        )
+
+        content = response.choices[0].message.content
+
+        article_md = out_dir / "article.md"
+        article_md.write_text(content, encoding="utf-8")
+        log.info("Saved article: %s", article_md)
+        return article_md
