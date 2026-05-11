@@ -12,8 +12,8 @@
 
 ```bash
 # 1. 克隆
-git clone https://github.com/fjiefefefe/-.git
-cd -
+git clone https://github.com/fjiefefefe/video-digestor.git
+cd video-digestor
 
 # 2. 基础安装
 pip install -e .
