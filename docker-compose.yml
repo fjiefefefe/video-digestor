@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  video-digestor:
+    build: .
+    image: video-digestor
+    container_name: video-digestor
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    volumes:
+      - ./output:/app/output
+      - ./cache:/app/.cache
+    entrypoint: ["video-digestor"]
