@@ -158,7 +158,7 @@ def transcribe(
 def summarize(
     transcript: Path = typer.Argument(..., help="transcript.txt 路径"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认 transcript 所在目录）"),
-    provider: str = typer.Option("local", "--provider", "-p", help="总结引擎: none / local / openai"),
+    provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     prompt: Optional[Path] = typer.Option(None, "--prompt", help="自定义 prompt 文件（provider=local 时使用）"),
     title: str = typer.Option("视频笔记", "--title", "-t", help="视频标题"),
 ):
@@ -195,7 +195,7 @@ def run(
     device: str = typer.Option("cuda", "--device", "-d", help="推理设备: cpu / cuda"),
     compute_type: str = typer.Option("int8", "--compute-type", "-c", help="计算精度: int8 / float16"),
     beam_size: int = typer.Option(5, "--beam-size", "-b", help="搜索宽度 (1-20)"),
-    provider: str = typer.Option("local", "--provider", "-p", help="总结引擎: none / local / openai"),
+    provider: str = typer.Option("openai", "--provider", "-p", help="总结引擎: none / local / openai"),
     skip_summary: bool = typer.Option(False, "--skip-summary", help="跳过总结步骤"),
     cookies_from_browser: Optional[str] = typer.Option(None, "--cookies-from-browser", help="从浏览器读取 cookie，如 chrome/firefox/edge"),
     cookies_file: Optional[Path] = typer.Option(None, "--cookies", help="cookies.txt 文件路径"),
